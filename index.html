@@ -213,7 +213,7 @@ button{font:inherit;color:inherit}
   -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .bgm svg{width:15px;height:15px}
 .bgm[aria-pressed="true"]{color:var(--rose)}
-.bgm[aria-pressed="true"] svg{animation:beat 1.9s ease-in-out infinite}
+.bgm.playing svg{animation:beat 1.9s ease-in-out infinite}
 @keyframes beat{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
 
 /* 꽃잎·반짝이 */
@@ -245,7 +245,7 @@ button{font:inherit;color:inherit}
   .hero{cursor:default}
   .toast{transition:none}
   .acc[open] .acc-row{animation:none}
-  .bgm[aria-pressed="true"] svg{animation:none}
+  .bgm.playing svg{animation:none}
   .acc summary::after{transition:none}
 }
 </style>
@@ -253,12 +253,12 @@ button{font:inherit;color:inherit}
 <body>
 <canvas id="petals" aria-hidden="true"></canvas>
 <div class="bgm-bar">
-  <button class="bgm" id="bgm-btn" type="button" aria-pressed="false">
+  <button class="bgm" id="bgm-btn" type="button" aria-pressed="true">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
-    <span class="bgm-label">음악 켜기</span>
+    <span class="bgm-label">음악 끄기</span>
   </button>
 </div>
-<audio id="bgm" src="music/bgm.mp3" loop preload="none"></audio>
+<audio id="bgm" src="music/bgm.mp3" loop preload="auto"></audio>
 
 <main class="page">
   <header class="hero" id="hero">
@@ -516,23 +516,38 @@ async function copyText(text, done) {
 }
 document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => copyText(b.dataset.copy, b.dataset.done)));
 
-// ---------- 배경음악: 버튼을 눌러야 재생 (자동 재생 안 함) ----------
+// ---------- 배경음악: 켜진 상태로 시작 ----------
+// 브라우저가 허용하면 열자마자 재생. 막히면(아이폰·카카오톡 안 브라우저 등) 화면을 처음 누를 때 재생.
+// 첫 터치가 음악 버튼이면 끄려는 뜻으로 보고 재생하지 않음.
 const bgm = document.getElementById("bgm"), bgmBtn = document.getElementById("bgm-btn");
 bgm.volume = .7;
-const setBgm = on => {
-  bgmBtn.setAttribute("aria-pressed", on);
-  bgmBtn.querySelector(".bgm-label").textContent = on ? "음악 끄기" : "음악 켜기";
+let wantMusic = true;   // 방문자가 원하는 상태. 버튼 글자는 이 값을 따름
+const showWant = () => {
+  bgmBtn.setAttribute("aria-pressed", wantMusic);
+  bgmBtn.querySelector(".bgm-label").textContent = wantMusic ? "음악 끄기" : "음악 켜기";
 };
-bgm.addEventListener("play", () => setBgm(true));
-bgm.addEventListener("pause", () => setBgm(false));
+bgm.addEventListener("playing", () => bgmBtn.classList.add("playing"));
+bgm.addEventListener("pause", () => bgmBtn.classList.remove("playing"));
+
+const UNLOCK = ["pointerdown", "pointerup", "touchend", "click", "keydown"];
+const stopUnlock = () => UNLOCK.forEach(t => document.removeEventListener(t, unlock, true));
+function unlock(e) {
+  if (!wantMusic) { stopUnlock(); return; }
+  if (e.target instanceof Element && e.target.closest("#bgm-btn")) return;
+  bgm.play().then(stopUnlock).catch(() => {});
+}
+bgm.play().catch(() => UNLOCK.forEach(t => document.addEventListener(t, unlock, true)));
+
 bgmBtn.addEventListener("click", () => {
-  if (bgm.paused) bgm.play().catch(() => toast("음악을 재생할 수 없습니다"));
-  else bgm.pause();
+  wantMusic = !wantMusic;
+  showWant();
+  if (wantMusic) bgm.play().then(stopUnlock).catch(() => toast("음악을 재생할 수 없습니다"));
+  else { bgm.pause(); stopUnlock(); }
 });
-let resumeBgm = false;   // 다른 앱·탭으로 가면 멈췄다가, 돌아오면 이어서 재생
+// 다른 앱·탭으로 가면 멈췄다가, 돌아오면 이어서 재생
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { resumeBgm = !bgm.paused; bgm.pause(); }
-  else if (resumeBgm) bgm.play().catch(() => {});
+  if (document.hidden) bgm.pause();
+  else if (wantMusic) bgm.play().catch(() => {});
 });
 
 // ---------- 카카오 (키가 있을 때만): 카카오톡 공유 + 지도 ----------
